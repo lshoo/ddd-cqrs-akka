@@ -5,6 +5,13 @@ import akka.actor.{PoisonPill, Props, ActorSystem}
 import support.EventsourcedAggregateRootSpec
 
 import ReservationSpec._
+import ecommerce.sales.domain.reservation.Reservation
+import ecommerce.sales.domain.reservation.Reservation._
+import ecommerce.sales.domain.productscatalog.{ProductType}
+import ecommerce.sales.sharekernel.Money
+
+import ecommerce.sales.domain.productscatalog.ProductData
+
 
 /**
  * Created by liaoshifu on 2014/5/4.

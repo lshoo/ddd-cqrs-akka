@@ -7,6 +7,7 @@ import akka.util.Timeout
 import scala.concurrent.{Future, Await}
 import scala.reflect.ClassTag
 import scala.util.Failure
+import ddd.support.domain.event.DomainEvent
 
 /**
  * Created by liaoshifu on 2014/5/4.
