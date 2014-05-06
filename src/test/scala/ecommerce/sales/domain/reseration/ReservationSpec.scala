@@ -2,7 +2,7 @@ package ecommerce.sales.domain.reseration
 
 import com.typesafe.config.ConfigFactory
 import akka.actor.{PoisonPill, Props, ActorSystem}
-import support.EventsourcedAggregateRootSpec
+import test.support.EventsourcedAggregateRootSpec
 
 import ReservationSpec._
 import ecommerce.sales.domain.reservation.Reservation
@@ -35,33 +35,33 @@ class ReservationSpec extends EventsourcedAggregateRootSpec(testSystem) {
     getActor(Props[Reservation])(name)
   }
 
-    "An Reservation actor" must {
-      "handle Reservation process" in {
-        val reservationId = aggregateRootId
-        var reservation = getReservationActor(reservationId)
+  "An Reservation actor" must {
+    "handle Reservation process" in {
+      val reservationId = aggregateRootId
+      var reservation = getReservationActor(reservationId)
 
-        expectEventPersisted[ReservationCreated] {
-          reservation ! CreateReservation(reservationId, "client1")
-        }
+      expectEventPersisted[ReservationCreated] {
+        reservation ! CreateReservation(reservationId, "client1")
+      }
 
-        expectEventPersisted[ProductReserved] {
-          reservation ! ReserveProduct(reservationId, "product1", 1)
-        }
+      expectEventPersisted[ProductReserved] {
+        reservation ! ReserveProduct(reservationId, "product1", 1)
+      }
 
-        // kill and recreate reservation actor
-        reservation ! PoisonPill
-        Thread.sleep(1000)
-        reservation = getReservationActor(reservationId)
+      // kill and recreate reservation actor
+      reservation ! PoisonPill
+      Thread.sleep(1000)
+      reservation = getReservationActor(reservationId)
 
-        val product2 = ProductData("product2", "productName", ProductType.Standard, Money(10))
-        val quantity = 1
-        expectEventPersisted(ProductReserved(reservationId, product2, quantity)) {
-          reservation ! ReserveProduct(reservationId, "product2", quantity)
-        }
+      val product2 = ProductData("product2", "productName", ProductType.Standard, Money(10))
+      val quantity = 1
+      expectEventPersisted(ProductReserved(reservationId, product2, quantity)) {
+        reservation ! ReserveProduct(reservationId, "product2", quantity)
+      }
 
-        expectEventPersisted[ReservationClosed] {
-          reservation ! CloseReservation(reservationId)
-        }
+      expectEventPersisted[ReservationClosed] {
+        reservation ! CloseReservation(reservationId)
       }
     }
+  }
 }

@@ -1,4 +1,4 @@
-package support
+package test.support
 
 import akka.actor.{ActorContext, Props, ActorRef}
 

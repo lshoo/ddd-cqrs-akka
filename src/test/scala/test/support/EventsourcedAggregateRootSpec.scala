@@ -1,5 +1,6 @@
-package support
+package test.support
 
+import scala.language.postfixOps
 import akka.actor.{Props, Actor, ActorRef, ActorSystem}
 import akka.testkit.{EventFilter, ImplicitSender, TestKit}
 import org.scalatest.{Matchers, BeforeAndAfterAll, WordSpecLike}
@@ -27,6 +28,7 @@ abstract class EventsourcedAggregateRootSpec(_system: ActorSystem) extends TestK
 
   override def afterAll() {
     TestKit.shutdownActorSystem(system)
+    system.awaitTermination()
   }
 
   import akka.pattern.ask

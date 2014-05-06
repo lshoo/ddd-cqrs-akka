@@ -8,6 +8,7 @@ import ReservationStatus._
 import ecommerce.sales.domain.productscatalog.{ProductType, ProductData}
 import ecommerce.sales.sharekernel.Money
 import ecommerce.sales.domain.reservation.errors.{ReservationOperationException, ReservationCreationException}
+import infrastructure.cluster.ShardResolution
 
 /**
  * Created by liaoshifu on 2014/5/5.
@@ -19,6 +20,14 @@ import ecommerce.sales.domain.reservation.errors.{ReservationOperationException,
  *
  */
 object Reservation {
+
+  implicit val shardResolution = new ReservationShardResolution
+
+  class ReservationShardResolution extends ShardResolution[Reservation] {
+    override def aggregateIdResolver = {
+      case cmd: Command => cmd.reservationId
+    }
+  }
 
   // Commands
   sealed trait Command {
@@ -51,7 +60,7 @@ class Reservation extends AggregateRoot[State] {
           raise(ReservationCreated(reservationId, clientId))
         }
 
-      case ReservationProduct(reservationId, productId, quantity) =>
+      case ReserveProduct(reservationId, productId, quantity) =>
         if (state.status eq Closed) throw new ReservationOperationException(s"Reservation $reservationId is closed", reservationId)
         else {
           // TODO fetch product detail
