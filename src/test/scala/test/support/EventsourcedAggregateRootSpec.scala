@@ -1,60 +1,54 @@
 package test.support
 
 import scala.language.postfixOps
-import akka.actor.{Props, Actor, ActorRef, ActorSystem}
+import akka.actor.{ ActorSystem}
 import akka.testkit.{EventFilter, ImplicitSender, TestKit}
-import org.scalatest.{Matchers, BeforeAndAfterAll, WordSpecLike}
+import org.scalatest.{BeforeAndAfter, Matchers, BeforeAndAfterAll, WordSpecLike}
 import akka.util.Timeout
 import scala.concurrent.{Future, Await}
+import scala.concurrent.duration._
 import scala.reflect.ClassTag
 import scala.util.Failure
 import ddd.support.domain.event.DomainEvent
+import ddd.support.domain.AggregateIdResolution
 
 /**
  * Created by liaoshifu on 2014/5/4.
  */
-abstract class EventsourcedAggregateRootSpec(_system: ActorSystem) extends TestKit(_system)
-  with ImplicitSender with WordSpecLike with Matchers with BeforeAndAfterAll{
+abstract class EventsourcedAggregateRootSpec[T](_system: ActorSystem)(implicit asClassTag: ClassTag[T]) extends TestKit(_system)
+  with ImplicitSender with WordSpecLike with Matchers with BeforeAndAfterAll with BeforeAndAfter {
 
-  implicit val aggregateRootId: String
-
-  val parentName = "parent"
-
-  val parent: ActorRef  = system.actorOf(Props(new Actor with ActorContextCreationSupport {
-    def receive = {
-      case ("getOrCreateChild", props: Props, name: String) => sender() ! getOrCreateChild(props, name)
-    }
-  }), name = parentName)
+  val domain = asClassTag.runtimeClass.getSimpleName
 
   override def afterAll() {
     TestKit.shutdownActorSystem(system)
     system.awaitTermination()
   }
 
-  import akka.pattern.ask
-  import scala.concurrent.duration._
+  def expectEventPersisted[E <: DomainEvent](aggregateId: String)(when: Unit)(implicit t: ClassTag[E], idResolution: AggregateIdResolution[T]) {
 
-  def getActor(props: Props)(implicit name: String = aggregateRootId): ActorRef = {
-    implicit val timeout = Timeout(5, SECONDS)
-    Await.result(parent ? ("getOrCreateChild", props, name), 5 seconds).asInstanceOf[ActorRef]
+    expectLogMessageFromAR("Event persisted: " + t.runtimeClass.getSimpleName, when)(aggregateId)
   }
 
-  def expectEventPersisted[E <: DomainEvent](when: Unit)(implicit t: ClassTag[E]) {
-    val eventPersistedMsg = "Event persisted: " + t.runtimeClass.getSimpleName
+  def expectEventPersisted[E <: DomainEvent](event: E)(aggregateId: String)(when: Unit)(implicit idResolution: AggregateIdResolution[T]) {
+    expectLogMessageFromAR("Event persisted: " + event.toString, when)(aggregateId)
+
+  }
+
+  def expectLogMessageFromAR(messageStart: String, when: Unit)(aggregateId: String)(implicit idResolution: AggregateIdResolution[T]) {
     EventFilter.info(
-      source = s"akka://OrderSpec/user/$parentName/$aggregateRootId",
-      start = eventPersistedMsg,
+      source = s"akka://Tests/user/$domain/$aggregateId",
+      start = messageStart,
       occurrences = 1
     ).intercept {
       when
     }
   }
 
-  def expectEventPersisted[E <: DomainEvent](event: E)(when: Unit) {
-    val eventPersistedMsg = "Event persisted: " + event.toString
+  def expectLogMessageFromOffice(messageStart: String)(when: Unit)(implicit idResolution: AggregateIdResolution[T]) {
     EventFilter.info(
-      source = s"akka://OrderSpec/user/$parentName/$aggregateRootId",
-      start = eventPersistedMsg,
+      source = s"akka://Tests/user/$domain",
+      start = messageStart,
       occurrences = 1
     ).intercept {
       when
@@ -70,5 +64,11 @@ abstract class EventsourcedAggregateRootSpec(_system: ActorSystem) extends TestK
       case Failure(ex) if ex.getClass.equals(t.runtimeClass) => println("OK")
       case x => fail(s"Unexpected result: $x")
     }
+  }
+
+  def expectReply[O, R](obj: O)(when: => R): R = {
+    val r = when
+    expectMsg(20.seconds, obj)
+    r
   }
 }

@@ -1,67 +1,103 @@
 package ecommerce.sales.domain.reseration
 
-import com.typesafe.config.ConfigFactory
-import akka.actor.{PoisonPill, Props, ActorSystem}
+import akka.actor._
 import test.support.EventsourcedAggregateRootSpec
 
-import ReservationSpec._
 import ecommerce.sales.domain.reservation.Reservation
-import ecommerce.sales.domain.reservation.Reservation._
-import ecommerce.sales.domain.productscatalog.{ProductType}
-import ecommerce.sales.sharekernel.Money
+import ddd.support.domain.Office._
+import test.support.TestConfig._
 
-import ecommerce.sales.domain.productscatalog.ProductData
+import scala.concurrent.duration._
+import ecommerce.sales.domain.reservation.Reservation._
+import ddd.support.domain.protocol.Acknowledged
+import ecommerce.sales.domain.reservation.Reservation.ProductReserved
+import ecommerce.sales.domain.reservation.Reservation.ReserveProduct
+import ecommerce.sales.domain.reservation.Reservation.ReservationCreated
+import akka.actor.Terminated
+import ecommerce.sales.domain.reservation.Reservation.CreateReservation
+import ecommerce.sales.domain.productscatalog.{ProductType, ProductData}
+import ecommerce.sales.sharekernel.Money
 
 
 /**
  * Created by liaoshifu on 2014/5/4.
  */
-object ReservationSpec {
-  val testSystem = {
-    val config = ConfigFactory.parseString(
-      """akka.loggers = ["akka.testkit.TestEventListener"]
-        |akka.persistence.journal.plugin = "in-memory-journal"
-      """.stripMargin
-    )
-    ActorSystem("OrderSpec", config)
-  }
-}
 
-class ReservationSpec extends EventsourcedAggregateRootSpec(testSystem) {
+class ReservationSpec extends EventsourcedAggregateRootSpec[Reservation](testSystem) {
 
-  override val aggregateRootId = "reservation1"
+  var reservationOffice: ActorRef = system.deadLetters
 
-  def getReservationActor(name: String) = {
-    getActor(Props[Reservation])(name)
+  before {
+    reservationOffice = office[Reservation]
   }
 
-  "An Reservation actor" must {
-    "handle Reservation process" in {
-      val reservationId = aggregateRootId
-      var reservation = getReservationActor(reservationId)
+  after {
+    ensureActorTerminated(reservationOffice)
+  }
 
-      expectEventPersisted[ReservationCreated] {
-        reservation ! CreateReservation(reservationId, "client1")
+  "Reservation clerk" must {
+    "communicate outcome with events" in {
+      val reservationId = "reservation1"
+
+      expectEventPersisted[ReservationCreated](reservationId) {
+        reservationOffice ! CreateReservation(reservationId, "client1")
       }
 
-      expectEventPersisted[ProductReserved] {
-        reservation ! ReserveProduct(reservationId, "product1", 1)
+      expectEventPersisted[ProductReserved](reservationId) {
+        reservationOffice ! ReserveProduct(reservationId, "product1", 1)
       }
 
-      // kill and recreate reservation actor
-      reservation ! PoisonPill
-      Thread.sleep(1000)
-      reservation = getReservationActor(reservationId)
+      // kill reservation office and all its clerks (aggregate root)
+      ensureActorTerminated(reservationOffice)
+      reservationOffice = office[Reservation]
 
       val product2 = ProductData("product2", "productName", ProductType.Standard, Money(10))
       val quantity = 1
-      expectEventPersisted(ProductReserved(reservationId, product2, quantity)) {
-        reservation ! ReserveProduct(reservationId, "product2", quantity)
+      expectEventPersisted(ProductReserved(reservationId, product2, quantity))(reservationId) {
+        reservationOffice ! ReserveProduct(reservationId, "product2", quantity)
       }
 
-      expectEventPersisted[ReservationClosed] {
-        reservation ! CloseReservation(reservationId)
+      expectEventPersisted[ReservationClosed](reservationId) {
+        reservationOffice ! CloseReservation(reservationId)
       }
+
     }
   }
+
+  "Reservation office" must {
+    "acknowledge commands " in {
+      val reservationId = "reservation2"
+
+      reservationOffice ! CreateReservation(reservationId, "client1")
+      expectMsg(Acknowledged)
+
+      reservationOffice ! ReserveProduct(reservationId, "product1", 1)
+      expectMsg(Acknowledged)
+
+      // kill reservation office and all its clerks (aggregate root)
+      ensureActorTerminated(reservationOffice)
+      reservationOffice = office[Reservation]
+
+      reservationOffice ! ReserveProduct(reservationId, "product2", 1)
+      expectMsg(Acknowledged)
+
+      reservationOffice ! CloseReservation(reservationId)
+      expectMsg(Acknowledged)
+    }
+  }
+
+  private def ensureActorTerminated(actor: ActorRef) = {
+    watch(actor)
+    actor ! PoisonPill
+
+    // Wait until reservation office is terminated
+    fishForMessage(1.seconds) {
+      case Terminated(_) =>
+        unwatch(actor)
+        true
+      case _ => false
+    }
+  }
+
+
 }
